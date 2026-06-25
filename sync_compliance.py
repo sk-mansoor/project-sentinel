@@ -16,21 +16,20 @@ def sync_to_dynamodb():
     latest_csv = max(csv_files, key=os.path.getctime)
     print(f"Parsing report discovered at: {latest_csv}")
 
-    # 2. Calculate the Compliance Score (Bulletproof Parsing)
+    # 2. Calculate the Compliance Score (Fuzzy Matcher)
     passed = 0
     failed = 0
 
-    # utf-8-sig removes invisible Byte Order Marks (BOM) from Prowler's output
     with open(latest_csv, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Force all CSV headers and values to uppercase to guarantee a match
-            row_data = {str(k).strip().upper(): str(v).strip().upper() for k, v in row.items()}
-            status = row_data.get('STATUS', '')
+            # Grab all the values in the row, make them uppercase, and strip spaces
+            row_values = [str(v).strip().upper() for v in row.values()]
             
-            if status == 'PASS':
+            # If the row contains a PASS or FAIL anywhere, count it!
+            if 'PASS' in row_values:
                 passed += 1
-            elif status == 'FAIL':
+            elif 'FAIL' in row_values:
                 failed += 1
 
     total = passed + failed
