@@ -1,5 +1,6 @@
 import streamlit as st
 import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 # ==========================================
@@ -273,16 +274,41 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
     with tab_summary:
         st.markdown("### Global Security Matrix (5-Service Core)")
         
-        # Real-time incident math
+        # Real-time incident math (from your existing code)
         total_threats = len(incidents)
         
-        # In the future, this score will be pulled directly from the Prowler JSON artifact
-        # For the UI build out today, we will represent the CIS Benchmark Baseline
-        compliance_score = "85%" 
+        # --- NEW: LIVE COMPLIANCE DATA FETCH ---
+        compliance_score = "Pending..."
+        chart_data = {"Date": ["Today"], "Score": [0]} # Fallback empty chart
+        
+        try:
+            compliance_table = db_resource.Table("sentinel-compliance-history")
+            # Query the database for the specific user logged in
+            comp_response = compliance_table.query(
+                KeyConditionExpression=Key('TenantID').eq(st.session_state.username)
+            )
+            comp_items = comp_response.get('Items', [])
+            
+            if comp_items:
+                # Sort items chronologically by date
+                comp_items.sort(key=lambda x: x['ScanDate'])
+                
+                # Grab the most recent score for the big metric
+                latest_score = int(comp_items[-1]['ComplianceScore'])
+                compliance_score = f"{latest_score}%"
+                
+                # Build the array for the time-series chart
+                chart_data = {
+                    "Date": [item['ScanDate'][5:] for item in comp_items], # Slices off the year for a cleaner X-axis (e.g., 06-25)
+                    "Score": [int(item['ComplianceScore']) for item in comp_items]
+                }
+        except Exception as e:
+            st.error(f"Failed to fetch compliance history: {str(e)}")
+        # ----------------------------------------
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("CIS Benchmark Compliance", value=compliance_score, delta="Daily Scan: PASS", delta_color="normal")
+            st.metric("CIS Benchmark Compliance", value=compliance_score, delta="Daily Scan: LIVE", delta_color="normal")
         with col2:
             st.metric("Active Configuration Drifts", value="0")
         with col3:
@@ -291,22 +317,42 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
         st.divider()
         st.markdown("#### Continuous Assessment Timeline")
         
-        # Mock time-series data for the 30-day compliance chart
-        # We will connect this to DynamoDB in the next phase
-        chart_data = {
-            "Date": ["Day 1", "Day 5", "Day 10", "Day 15", "Day 20", "Day 25", "Today"],
-            "Score": [45, 60, 60, 75, 80, 85, 85]
-        }
+        # Plot the live data fetched from DynamoDB
         st.line_chart(chart_data, x="Date", y="Score")
 
         st.divider()
         st.markdown("#### Service Health Status")
         s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
-        s_col1.success("IAM: Secure")
-        s_col2.success("S3: Secure")
-        s_col3.success("EC2: Secure")
-        s_col4.success("VPC: Secure")
-        s_col5.success("CloudTrail: Secure")
+        
+        # 1. Look through all active incidents and see which services are affected
+        # (We default older malware records to 'S3' to keep it backwards compatible)
+        affected_services = [item.get('service', 'S3').upper() for item in incidents]
+
+        # 2. Dynamically render the UI based on the database
+        if 'IAM' in affected_services:
+            s_col1.error("IAM: Vulnerable")
+        else:
+            s_col1.success("IAM: Secure")
+
+        if 'S3' in affected_services:
+            s_col2.error("S3: Under Attack")
+        else:
+            s_col2.success("S3: Secure")
+
+        if 'EC2' in affected_services:
+            s_col3.error("EC2: Vulnerable")
+        else:
+            s_col3.success("EC2: Secure")
+
+        if 'VPC' in affected_services:
+            s_col4.error("VPC: Drift Detected")
+        else:
+            s_col4.success("VPC: Secure")
+
+        if 'CLOUDTRAIL' in affected_services:
+            s_col5.error("CloudTrail: Offline")
+        else:
+            s_col5.success("CloudTrail: Secure")
 
     with tab_cspm:
         st.markdown("### Cloud Security Posture Management (CSPM)")
