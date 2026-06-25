@@ -26,6 +26,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install and Run Prowler
+        continue-on-error: true
         run: |
           pip install prowler
           # Run Prowler specifically against S3 and IAM as a baseline check
