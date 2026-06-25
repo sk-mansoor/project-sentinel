@@ -9,11 +9,15 @@ def sync_to_dynamodb():
     
     # 1. Find the latest Prowler CSV report recursively
     csv_files = glob.glob('**/*.csv', recursive=True)
-    if not csv_files:
-        print("Error: No Prowler CSV found anywhere in the workspace!")
+    
+    # --- THE FIX: Filter out the compliance summary folder to grab the main report ---
+    main_reports = [f for f in csv_files if 'compliance' not in f.lower()]
+    
+    if not main_reports:
+        print("Error: No main Prowler CSV found anywhere in the workspace!")
         return
 
-    latest_csv = max(csv_files, key=os.path.getctime)
+    latest_csv = max(main_reports, key=os.path.getctime)
     print(f"Parsing report discovered at: {latest_csv}")
 
     # 2. Calculate the Compliance Score (Fuzzy Matcher)
