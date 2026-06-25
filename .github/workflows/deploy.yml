@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install prowler
           # Run Prowler specifically against S3 and IAM as a baseline check
-          prowler aws --services s3 iam ec2 vpc cloudtrail -M csv json-asff html
+          prowler aws -M csv json-asff html
           
       - name: Upload Prowler Reports
         uses: actions/upload-artifact@v4
