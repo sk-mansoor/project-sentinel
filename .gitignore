@@ -1,0 +1,10 @@
+# Terraform Sate & Plugins
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Python & Zips
+__pycache__/
+*.zip
+*.env

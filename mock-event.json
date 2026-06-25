@@ -1,0 +1,1 @@
+{"detail": {"eventName": "DeletePublicAccessBlock", "requestParameters": {"bucketName": "sentinel-tenant-data-9202f2df"}, "userIdentity": {"arn": "arn:aws:iam::225119180791:user/rogue-admin"}}}

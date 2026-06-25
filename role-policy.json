@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutBucketPublicAccessBlock", "s3:GetBucketPublicAccessBlock", "s3:PutBucketVersioning", "s3:GetBucketTagging", "s3:PutBucketTagging", "s3:DeleteBucketTagging", "sns:Publish", "logs:*"],
+      "Resource": "*"
+    }
+  ]
+}
