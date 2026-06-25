@@ -283,9 +283,13 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
         
         try:
             compliance_table = db_resource.Table("sentinel-compliance-history")
-            # Query the database for the specific user logged in
+            
+            # --- THE FIX: Fallback to 'admin' if the username is empty ---
+            query_user = st.session_state.username if st.session_state.username else "admin"
+            
+            # Query the database for the specific user
             comp_response = compliance_table.query(
-                KeyConditionExpression=Key('TenantID').eq(st.session_state.username)
+                KeyConditionExpression=Key('TenantID').eq(query_user)
             )
             comp_items = comp_response.get('Items', [])
             

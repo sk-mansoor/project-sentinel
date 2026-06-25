@@ -8,13 +8,13 @@ def sync_to_dynamodb():
     print("Initiating Sentinel Data Bridge...")
     
     # 1. Find the latest Prowler CSV report
-    csv_files = glob.glob('output/*.csv')
+    ccsv_files = glob.glob('**/*.csv', recursive=True)
     if not csv_files:
-        print("Error: No Prowler CSV found in the output directory!")
+        print("Error: No Prowler CSV found anywhere in the workspace!")
         return
 
     latest_csv = max(csv_files, key=os.path.getctime)
-    print(f"Parsing report: {latest_csv}")
+    print(f"Parsing report discovered at: {latest_csv}")
 
     # 2. Calculate the Compliance Score
     passed = 0
