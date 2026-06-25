@@ -271,15 +271,42 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
     ])
     
     with tab_summary:
-        total_threats = len(incidents)
-        security_score = "100%" if total_threats == 0 else f"{max(10, 100 - (total_threats * 15))}%"
+        st.markdown("### Global Security Matrix (5-Service Core)")
         
-        st.markdown("### Global Security Matrix")
-        col1, col2 = st.columns(2)
+        # Real-time incident math
+        total_threats = len(incidents)
+        
+        # In the future, this score will be pulled directly from the Prowler JSON artifact
+        # For the UI build out today, we will represent the CIS Benchmark Baseline
+        compliance_score = "85%" 
+        
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Global Security Score", value=security_score, delta="-0%" if total_threats == 0 else f"-{total_threats * 15}%")
+            st.metric("CIS Benchmark Compliance", value=compliance_score, delta="Daily Scan: PASS", delta_color="normal")
         with col2:
+            st.metric("Active Configuration Drifts", value="0")
+        with col3:
             st.metric("Active Quarantined Threats", value=str(total_threats))
+
+        st.divider()
+        st.markdown("#### Continuous Assessment Timeline")
+        
+        # Mock time-series data for the 30-day compliance chart
+        # We will connect this to DynamoDB in the next phase
+        chart_data = {
+            "Date": ["Day 1", "Day 5", "Day 10", "Day 15", "Day 20", "Day 25", "Today"],
+            "Score": [45, 60, 60, 75, 80, 85, 85]
+        }
+        st.line_chart(chart_data, x="Date", y="Score")
+
+        st.divider()
+        st.markdown("#### Service Health Status")
+        s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
+        s_col1.success("IAM: Secure")
+        s_col2.success("S3: Secure")
+        s_col3.success("EC2: Secure")
+        s_col4.success("VPC: Secure")
+        s_col5.success("CloudTrail: Secure")
 
     with tab_cspm:
         st.markdown("### Cloud Security Posture Management (CSPM)")

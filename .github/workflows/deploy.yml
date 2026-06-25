@@ -34,6 +34,11 @@ jobs:
           # Run Prowler specifically against S3 and IAM as a baseline check
           prowler aws -M csv json-asff html
           
+      - name: Sync Compliance to DynamoDB
+        run: |
+          pip install boto3
+          python sync_compliance.py   
+
       - name: Upload Prowler Reports
         uses: actions/upload-artifact@v4
         if: always() # Upload reports even if Prowler finds vulnerabilities
