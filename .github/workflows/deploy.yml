@@ -1,7 +1,5 @@
 name: Project Sentinel CI/CD
 
-name: Project Sentinel CI/CD
-
 on:
   push:
     branches:
