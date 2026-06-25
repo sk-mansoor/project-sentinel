@@ -20,20 +20,22 @@ def sync_to_dynamodb():
     latest_csv = max(main_reports, key=os.path.getctime)
     print(f"Parsing report discovered at: {latest_csv}")
 
-    # 2. Calculate the Compliance Score (Fuzzy Matcher)
+   # 2. Calculate the Compliance Score (Semicolon Parsing)
     passed = 0
     failed = 0
 
     with open(latest_csv, 'r', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
+        # --- THE FIX: Explicitly set the delimiter to a semicolon ---
+        reader = csv.DictReader(f, delimiter=';')
+        
         for row in reader:
-            # Grab all the values in the row, make them uppercase, and strip spaces
-            row_values = [str(v).strip().upper() for v in row.values()]
+            # Rebuild the row with uppercase keys/values so it never misses 'STATUS'
+            row_data = {str(k).strip().upper(): str(v).strip().upper() for k, v in row.items()}
+            status = row_data.get('STATUS', '')
             
-            # If the row contains a PASS or FAIL anywhere, count it!
-            if 'PASS' in row_values:
+            if status == 'PASS':
                 passed += 1
-            elif 'FAIL' in row_values:
+            elif status == 'FAIL':
                 failed += 1
 
     total = passed + failed
