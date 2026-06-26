@@ -1,20 +1,19 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 def fetch_prowler_reports_from_s3():
-    bucket_name = "YOUR-BUCKET-NAME-HERE"  # <-- Replace with your bucket name
+    bucket_name = "sentinel-prowler-archive"  # <-- Verify this matches exactly!
     s3_client = boto3.client('s3', region_name='us-east-1')
     reports = []
     
     try:
-        # List all objects in the bucket
         response = s3_client.list_objects_v2(Bucket=bucket_name)
         if 'Contents' in response:
             for obj in response['Contents']:
                 key = obj['Key']
-                # Track the file path, size, and type
                 file_type = "CSV Data" if key.endswith('.csv') else "HTML Report"
                 reports.append({
                     "File": key,
@@ -22,8 +21,15 @@ def fetch_prowler_reports_from_s3():
                     "Type": file_type,
                     "Size": f"{round(obj['Size'] / 1024, 2)} KB"
                 })
+        else:
+            import streamlit as st
+            st.warning(f"Connected to '{bucket_name}', but AWS says the bucket is empty.")
+            
     except Exception as e:
-        pass
+        import streamlit as st
+        # This will blast the exact AWS error onto your dashboard
+        st.error(f"🚨 S3 Access Error: {str(e)}") 
+        
     return reports, bucket_name
 # ==========================================
 # CONFIGURATION
@@ -383,42 +389,78 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
             s_col5.error("CloudTrail: Offline")
         else:
             s_col5.success("CloudTrail: Secure")
-            
+
             st.divider()
             st.subheader("📁 Automated Compliance Report Archive")
-            st.markdown("Direct access to historical Prowler security scans stored securely in Amazon S3.")
-            
-            # Call the S3 function
-            s3_reports, target_bucket = fetch_prowler_reports_from_s3()
-            
-            if s3_reports:
-                # Display a clean data table of files found in S3
-                for report in s3_reports:
-                    col_date, col_type, col_size, col_action = st.columns([2, 2, 2, 3])
-                    with col_date:
-                        st.write(f"📅 {report['Date']}")
-                    with col_type:
-                        st.write(f"📄 {report['Type']}")
-                    with col_size:
-                        st.write(f"⚖️ {report['Size']}")
-                    with col_action:
-                        # Create a quick download link for the specific file
-                        try:
-                            s3_client = boto3.client('s3', region_name='us-east-1')
-                            file_obj = s3_client.get_object(Bucket=target_bucket, Key=report['File'])
-                            file_bytes = file_obj['Body'].read()
+            st.markdown("Live interactive view of the latest automated Prowler security scan.")
+        
+        target_bucket = "sentinel-prowler-archive"
+        s3_client = boto3.client('s3', region_name='us-east-1')
+        
+        try:
+            response = s3_client.list_objects_v2(Bucket=target_bucket)
+            if 'Contents' in response:
+                # Sort newest first
+                sorted_files = sorted(response['Contents'], key=lambda obj: obj['LastModified'], reverse=True)
+                
+                # Filter out the CSVs and ONLY grab the HTML files
+                html_files = [f for f in sorted_files if f['Key'].endswith('.html')]
+                
+                if html_files:
+                    # Grab the single most recent HTML report
+                    latest_html_key = html_files[0]['Key']
+                    report_date = latest_html_key.split('/')[0]
+                    
+                    # 1. Create the Download Button using a Presigned URL for the LATEST file
+                    col_info, col_download = st.columns([3, 1])
+                    with col_info:
+                        st.success(f"✅ Successfully loaded latest scan from: **{report_date}**")
+                    with col_download:
+                        presigned_url = s3_client.generate_presigned_url(
+                            'get_object',
+                            Params={'Bucket': target_bucket, 'Key': latest_html_key},
+                            ExpiresIn=3600
+                        )
+                        st.link_button("💾 Download Latest", url=presigned_url)
+                    
+                    # 2. Render the LATEST HTML directly on the dashboard
+                    st.write("### 🔬 Interactive Report")
+                    with st.spinner("Rendering full compliance document..."):
+                        file_obj = s3_client.get_object(Bucket=target_bucket, Key=latest_html_key)
+                        raw_html = file_obj['Body'].read().decode('utf-8')
+                        
+                        with st.expander("👁️ Expand Full Prowler Report", expanded=True):
+                            components.html(raw_html, height=800, scrolling=True)
+                    
+                    # 3. NEW: Historical Downloads List (Up to 7 days)
+                    if len(html_files) > 1:
+                        st.divider()
+                        st.write("### 🗄️ Historical Reports (7-Day Retention)")
+                        
+                        # Loop through everything EXCEPT the first (latest) file
+                        for old_file in html_files[1:]:
+                            old_date = old_file['Key'].split('/')[0]
+                            old_size = f"{round(old_file['Size'] / 1024, 2)} KB"
                             
-                            st.download_button(
-                                label=f"Download {report['Type'].split()[0]}",
-                                data=file_bytes,
-                                file_name=report['File'].split('/')[-1],
-                                mime='text/html' if "HTML" in report['Type'] else 'text/csv',
-                                key=report['File']
-                            )
-                        except Exception:
-                            st.error("Download Error")
-            else:
-                st.info("No archived historical scans found in the S3 bucket yet. Run the GitHub Action pipeline to upload your first scan.")        
+                            c_date, c_size, c_btn = st.columns([2, 2, 2])
+                            with c_date:
+                                st.write(f"📅 {old_date}")
+                            with c_size:
+                                st.write(f"⚖️ {old_size}")
+                            with c_btn:
+                                # Generate a unique presigned URL for each older file
+                                old_url = s3_client.generate_presigned_url(
+                                    'get_object',
+                                    Params={'Bucket': target_bucket, 'Key': old_file['Key']},
+                                    ExpiresIn=3600
+                                )
+                                st.link_button("Download", url=old_url, key=old_file['Key'])
+                                
+                else:
+                    st.info("No HTML reports found in the bucket yet.")
+                
+        except Exception as e:
+            st.error(f"Failed to fetch report: {str(e)}")       
     # -----------------------------------------
     # TAB 2: IAM Security Posture
     # -----------------------------------------
