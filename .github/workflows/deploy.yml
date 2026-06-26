@@ -35,15 +35,15 @@ jobs:
           prowler aws -M csv json-asff html
       - name: Push Prowler Reports to Amazon S3
         run: |
-        # Create a date folder prefix so reports are organized neatly
-        DATE_PREFIX=$(date +'%Y-%m-%d')
-        
-        # Copy the generated HTML and CSV files from the prowler output directory to S3
-        aws s3 cp output/ s3://sentinel-prowler-archive/$DATE_PREFIX/ --recursive --exclude "*" --include "*.html" --include "*.csv"
+          # Create a date folder prefix so reports are organized neatly
+          DATE_PREFIX=$(date +'%Y-%m-%d')
+          
+          # Copy the generated HTML and CSV files from the prowler output directory to S3
+          aws s3 cp output/ s3://sentinel-prowler-archive/$DATE_PREFIX/ --recursive --exclude "*" --include "*.html" --include "*.csv"
         env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'us-east-1'
 
       - name: Sync Compliance to DynamoDB
         run: |
