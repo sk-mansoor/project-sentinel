@@ -3,6 +3,28 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
+def fetch_prowler_reports_from_s3():
+    bucket_name = "YOUR-BUCKET-NAME-HERE"  # <-- Replace with your bucket name
+    s3_client = boto3.client('s3', region_name='us-east-1')
+    reports = []
+    
+    try:
+        # List all objects in the bucket
+        response = s3_client.list_objects_v2(Bucket=bucket_name)
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                key = obj['Key']
+                # Track the file path, size, and type
+                file_type = "CSV Data" if key.endswith('.csv') else "HTML Report"
+                reports.append({
+                    "File": key,
+                    "Date": key.split('/')[0] if '/' in key else "Root",
+                    "Type": file_type,
+                    "Size": f"{round(obj['Size'] / 1024, 2)} KB"
+                })
+    except Exception as e:
+        pass
+    return reports, bucket_name
 # ==========================================
 # CONFIGURATION
 # ==========================================
@@ -267,9 +289,13 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
         incidents = []
         st.sidebar.error(f"Registry Sync Error: {str(e)}")
 
-    tab_summary, tab_cspm, tab_malware = st.tabs([
-        "📊 Enterprise Posture", "⚙️ SaaS CSPM Engine", "🔬 Serverless Malware Quarantine"
-    ])
+    # Create the navigation tabs
+    tab_summary, tab_iam, tab_cspm, tab_malware = st.tabs([
+    "📊 Enterprise Posture", 
+    "🔐 IAM Security",
+    "⚙️ SaaS CSPM Engine", 
+    "🔬 Serverless Malware Quarantine"
+])
     
     with tab_summary:
         st.markdown("### Global Security Matrix (5-Service Core)")
@@ -357,6 +383,91 @@ elif st.session_state.auth_step == "DONE" and st.session_state.authenticated:
             s_col5.error("CloudTrail: Offline")
         else:
             s_col5.success("CloudTrail: Secure")
+            
+            st.divider()
+            st.subheader("📁 Automated Compliance Report Archive")
+            st.markdown("Direct access to historical Prowler security scans stored securely in Amazon S3.")
+            
+            # Call the S3 function
+            s3_reports, target_bucket = fetch_prowler_reports_from_s3()
+            
+            if s3_reports:
+                # Display a clean data table of files found in S3
+                for report in s3_reports:
+                    col_date, col_type, col_size, col_action = st.columns([2, 2, 2, 3])
+                    with col_date:
+                        st.write(f"📅 {report['Date']}")
+                    with col_type:
+                        st.write(f"📄 {report['Type']}")
+                    with col_size:
+                        st.write(f"⚖️ {report['Size']}")
+                    with col_action:
+                        # Create a quick download link for the specific file
+                        try:
+                            s3_client = boto3.client('s3', region_name='us-east-1')
+                            file_obj = s3_client.get_object(Bucket=target_bucket, Key=report['File'])
+                            file_bytes = file_obj['Body'].read()
+                            
+                            st.download_button(
+                                label=f"Download {report['Type'].split()[0]}",
+                                data=file_bytes,
+                                file_name=report['File'].split('/')[-1],
+                                mime='text/html' if "HTML" in report['Type'] else 'text/csv',
+                                key=report['File']
+                            )
+                        except Exception:
+                            st.error("Download Error")
+            else:
+                st.info("No archived historical scans found in the S3 bucket yet. Run the GitHub Action pipeline to upload your first scan.")        
+    # -----------------------------------------
+    # TAB 2: IAM Security Posture
+    # -----------------------------------------
+    with tab_iam:
+        st.subheader("Identity & Access Management (IAM) Posture")
+        st.markdown("Live monitoring of credential stagnation, privilege escalation vectors, and root account activity.")
+        
+        # Grab the latest IAM metrics from the database (fallback to '0' if missing)
+        live_stale_keys = str(comp_items[0].get('StaleKeys', 0)) if comp_items else "0"
+        live_missing_mfa = str(comp_items[0].get('MissingMFA', 0)) if comp_items else "0"
+        
+        # Create a 3-column layout for the key metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(label="Active Root Logins", value="0", delta="Secured", delta_color="normal")
+            
+        with col2:
+            st.metric(label="Stale Access Keys (>90 Days)", value=live_stale_keys, delta="Action Required" if int(live_stale_keys) > 0 else "Secured", delta_color="inverse")
+            
+        with col3:
+            st.metric(label="Users without MFA", value=live_missing_mfa, delta="Critical" if int(live_missing_mfa) > 0 else "Secured", delta_color="inverse")
+            
+        st.divider()
+        
+        st.write("### Real-Time IAM Threat Log")
+        
+        # --- Define incident_items by querying DynamoDB first ---
+
+        try:
+            # Explicitly declare the region so boto3 doesn't get lost
+            dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+            registry_table = dynamodb.Table('sentinel-tenant-registry')
+            incident_items = registry_table.scan().get('Items', [])
+        except Exception as e:
+            incident_items = []
+            # Print the exact Python error to the dashboard so we can see what's wrong
+            st.warning(f"Database Connection Error: {str(e)}")
+        # --------------------------------------------------------
+
+        # Filter for only IAM threats
+        iam_threats = [item for item in incident_items if item.get('service') == 'IAM']
+        
+        if iam_threats:
+            for threat in iam_threats:
+                st.error(f"🚨 **{threat.get('file_key')}**")
+                st.write(f"**Action Required:** {threat.get('resolution')}")
+        else:
+            st.success("No active identity threats detected in the current session.")
 
     with tab_cspm:
         st.markdown("### Cloud Security Posture Management (CSPM)")

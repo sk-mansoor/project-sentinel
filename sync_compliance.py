@@ -20,27 +20,38 @@ def sync_to_dynamodb():
     latest_csv = max(main_reports, key=os.path.getctime)
     print(f"Parsing report discovered at: {latest_csv}")
 
-   # 2. Calculate the Compliance Score (Semicolon Parsing)
+   # 2. Calculate the Compliance Score and IAM Metrics
     passed = 0
     failed = 0
+    stale_keys = 0
+    missing_mfa = 0
 
     with open(latest_csv, 'r', encoding='utf-8-sig') as f:
-        # --- THE FIX: Explicitly set the delimiter to a semicolon ---
         reader = csv.DictReader(f, delimiter=';')
         
         for row in reader:
-            # Rebuild the row with uppercase keys/values so it never misses 'STATUS'
             row_data = {str(k).strip().upper(): str(v).strip().upper() for k, v in row.items()}
             status = row_data.get('STATUS', '')
+            check_id = row_data.get('CHECK_ID', '')
             
+            # 1. Global Compliance Counter
             if status == 'PASS':
                 passed += 1
             elif status == 'FAIL':
                 failed += 1
+                
+            # 2. IAM Threat Counter (Only look at Failed checks)
+            if status == 'FAIL' and 'IAM' in check_id:
+                # Catch old or unused programmatic access keys
+                if 'ACCESSKEY' in check_id and ('UNUSED' in check_id or 'OLD' in check_id):
+                    stale_keys += 1
+                # Catch console users or root accounts missing MFA
+                if 'MFA' in check_id:
+                    missing_mfa += 1
 
     total = passed + failed
     score = int((passed / total) * 100) if total > 0 else 0
-    print(f"Calculated Score: {score}% ({passed} Passed, {failed} Failed)")
+    print(f"Calculated Score: {score}% | Stale Keys: {stale_keys} | Missing MFA: {missing_mfa}")
 
     if total == 0:
         print("Warning: Could not parse PASS/FAIL columns correctly. Check CSV structure.")
@@ -56,7 +67,10 @@ def sync_to_dynamodb():
                 'ScanDate': datetime.now().strftime('%Y-%m-%d'),
                 'ComplianceScore': score,
                 'PassedChecks': passed,
-                'FailedChecks': failed
+                'FailedChecks': failed,
+                'StaleKeys': stale_keys,       # <-- Add this line
+                'MissingMFA': missing_mfa
+                
             }
         )
         print("Successfully synced daily compliance to DynamoDB!")
