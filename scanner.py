@@ -2,13 +2,29 @@ import json
 import boto3
 import urllib.parse
 import os
+import yara
 
 s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
-table_name = os.environ.get('DYNAMODB_TABLE')
+table_name = os.environ.get('DYNAMODB_TABLE', 'sentinel-threat-log')
 
-# Threat Intelligence: The standard EICAR test string
-MALWARE_SIGNATURE = b"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+# Enterprise YARA Engine Ruleset
+YARA_RULES = """
+rule Catch_EICAR_And_Suspicious_Hex {
+    meta:
+        description = "Detects EICAR and generic suspicious hex patterns"
+        author = "Project Sentinel CNAPP"
+        threat_level = "High"
+    strings:
+        # Text-based signature
+        $eicar_string = "X5O!P%@AP[4\\\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+        
+        # Hexadecimal pattern matching (simulating a packed executable signature)
+        $hex_pattern = { 58 35 4F 21 50 25 40 41 50 5B 34 5C 50 5A 58 35 }
+    condition:
+        $eicar_string or $hex_pattern
+}
+"""
 
 def lambda_handler(event, context):
     print("Event Received:", json.dumps(event))
@@ -25,18 +41,20 @@ def lambda_handler(event, context):
     response = s3_client.get_object(Bucket=bucket, Key=key)
     file_content = response['Body'].read()
 
-    # 3. Engine Analysis (Signature Matching)
-    is_malicious = MALWARE_SIGNATURE in file_content
+    # 3. Compile and Execute YARA Engine
+    rules = yara.compile(source=YARA_RULES)
+    matches = rules.match(data=file_content)
 
-    # 4. Quarantine Action
-    if is_malicious:
-        print(f"🚨 THREAT DETECTED in {key}! Initiating Quarantine Protocol.")
+    # 4. Quarantine Protocol
+    if matches:
+        matched_rule = matches[0].rule
+        print(f"🚨 THREAT DETECTED: [{matched_rule}] in {key}! Initiating Quarantine.")
         
-        # Tag as malicious
+        # Tag as malicious in S3
         s3_client.put_object_tagging(
             Bucket=bucket,
             Key=key,
-            Tagging={'TagSet': [{'Key': 'SecurityStatus', 'Value': 'QUARANTINED'}, {'Key': 'ThreatType', 'Value': 'EICAR_TEST'}]}
+            Tagging={'TagSet': [{'Key': 'SecurityStatus', 'Value': 'QUARANTINED'}, {'Key': 'ThreatType', 'Value': matched_rule}]}
         )
         
         # Log to Sentinel Registry (DynamoDB)
@@ -47,11 +65,11 @@ def lambda_handler(event, context):
                 'threat_id': f"{bucket}::{key}",
                 'status': 'QUARANTINED',
                 'file_key': key,
+                'yara_match': matched_rule,
                 'resolution': 'PENDING_ADMIN_REVIEW'
             }
         )
-        
-        return {"statusCode": 200, "body": "Threat Quarantined"}
+        return {"statusCode": 200, "body": f"Quarantined by YARA rule: {matched_rule}"}
         
     else:
         print(f"✅ {key} is clean.")
